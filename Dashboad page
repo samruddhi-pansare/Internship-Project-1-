@@ -1,0 +1,201 @@
+import React, { useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { useTasks } from '../hooks/useTasks';
+import TaskCard from '../components/TaskCard';
+import TaskModal from '../components/TaskModal';
+import toast from 'react-hot-toast';
+
+const FILTER_TABS = [
+  { key: '', label: 'All Tasks', icon: '📋' },
+  { key: 'pending', label: 'Pending', icon: '⏳' },
+  { key: 'in-progress', label: 'In Progress', icon: '🔄' },
+  { key: 'completed', label: 'Completed', icon: '✅' },
+];
+
+const Dashboard = () => {
+  const { user, logout } = useAuth();
+  const [activeStatus, setActiveStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const [priority, setPriority] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [order, setOrder] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editTask, setEditTask] = useState(null);
+
+  const filters = { status: activeStatus, search, priority, sortBy, order, page, limit: 8 };
+  const { tasks, pagination, stats, loading, createTask, updateTask, deleteTask } = useTasks(filters);
+
+  const handleTabChange = (key) => { setActiveStatus(key); setPage(1); };
+  const handleSearch = (e) => { setSearch(e.target.value); setPage(1); };
+
+  const handleEdit = (task) => { setEditTask(task); setModalOpen(true); };
+  const handleNew = () => { setEditTask(null); setModalOpen(true); };
+
+  const handleSave = useCallback(async (data) => {
+    if (editTask?._id) await updateTask(editTask._id, data);
+    else await createTask(data);
+  }, [editTask, createTask, updateTask]);
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Delete this task?')) await deleteTask(id);
+  };
+
+  const handleStatusChange = async (id, status) => {
+    await updateTask(id, { status });
+  };
+
+  const avatarLetter = user?.name?.[0]?.toUpperCase() || 'U';
+
+  return (
+    <div className="dashboard">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-icon">✓</div>
+          <h2>TaskFlow</h2>
+        </div>
+
+        <p className="sidebar-section">Workspace</p>
+        {FILTER_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`sidebar-item ${activeStatus === tab.key ? 'active' : ''}`}
+            onClick={() => handleTabChange(tab.key)}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+            <span className="badge">
+              {tab.key === '' ? (stats.pending + stats['in-progress'] + stats.completed)
+                : tab.key === 'pending' ? stats.pending
+                : tab.key === 'in-progress' ? stats['in-progress']
+                : stats.completed}
+            </span>
+          </button>
+        ))}
+
+        <div className="sidebar-footer">
+          <div className="user-card">
+            <div className="user-avatar">{avatarLetter}</div>
+            <div className="user-info" style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</p>
+              <span>Free plan</span>
+            </div>
+            <button className="btn btn-ghost btn-icon btn-sm" onClick={logout} title="Logout">⏻</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="main-content">
+        <div className="page-header">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1>{FILTER_TABS.find(t => t.key === activeStatus)?.label || 'All Tasks'}</h1>
+              <p>
+                {pagination ? `${pagination.total} task${pagination.total !== 1 ? 's' : ''} total` : 'Manage your tasks'}
+              </p>
+            </div>
+            <button className="btn btn-primary" style={{ width: 'auto' }} onClick={handleNew}>
+              + New Task
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="stats-row">
+          <div className="stat-card pending">
+            <p className="stat-label">Pending</p>
+            <p className="stat-value">{stats.pending}</p>
+          </div>
+          <div className="stat-card in-progress">
+            <p className="stat-label">In Progress</p>
+            <p className="stat-value">{stats['in-progress']}</p>
+          </div>
+          <div className="stat-card completed">
+            <p className="stat-label">Completed</p>
+            <p className="stat-value">{stats.completed}</p>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="toolbar">
+          <input
+            className="search-input"
+            placeholder="🔍  Search tasks..."
+            value={search}
+            onChange={handleSearch}
+          />
+          <select className="select" value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }}>
+            <option value="">All Priorities</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <select className="select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="createdAt">Sort: Date Created</option>
+            <option value="updatedAt">Sort: Last Updated</option>
+            <option value="dueDate">Sort: Due Date</option>
+            <option value="priority">Sort: Priority</option>
+            <option value="title">Sort: Title</option>
+          </select>
+          <select className="select" value={order} onChange={(e) => setOrder(e.target.value)}>
+            <option value="desc">↓ Desc</option>
+            <option value="asc">↑ Asc</option>
+          </select>
+        </div>
+
+        {/* Task List */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+            <div className="spinner" style={{ margin: '0 auto 12px' }} />
+            <p>Loading tasks...</p>
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📭</div>
+            <h3>No tasks found</h3>
+            <p>Create your first task to get started</p>
+            <button className="btn btn-primary" style={{ width: 'auto', marginTop: 16 }} onClick={handleNew}>
+              + Add Task
+            </button>
+          </div>
+        ) : (
+          <div className="task-list">
+            {tasks.map((task) => (
+              <TaskCard
+                key={task._id}
+                task={task}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onStatusChange={handleStatusChange}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination && pagination.pages > 1 && (
+          <div className="pagination">
+            <button className="page-btn" disabled={page === 1} onClick={() => setPage(page - 1)}>← Prev</button>
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
+              <button key={p} className={`page-btn ${p === page ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
+            ))}
+            <button className="page-btn" disabled={page === pagination.pages} onClick={() => setPage(page + 1)}>Next →</button>
+          </div>
+        )}
+      </main>
+
+      {/* Task Modal */}
+      {modalOpen && (
+        <TaskModal
+          task={editTask}
+          onClose={() => setModalOpen(false)}
+          onSave={handleSave}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
